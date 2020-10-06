@@ -1,0 +1,342 @@
+--- linux/init/main.c.orig	Mon May 20 19:33:57 1996
++++ linux/init/main.c	Thu Aug 29 23:53:14 1996
+@@ -171,6 +171,9 @@
+ extern void baycom_setup(char *str, int *ints);
+ #endif
+ 
++#ifdef CONFIG_PCSP
++extern void pcsp_setup(char *str, int *ints);
++#endif
+ 
+ #if defined(CONFIG_SYSVIPC) || defined(CONFIG_KERNELD)
+ extern void ipc_init(void);
+@@ -374,6 +377,9 @@
+ #endif CONFIG_ISP16_CDI
+ #ifdef CONFIG_SOUND
+ 	{ "sound=", sound_setup },
++#endif
++#ifdef CONFIG_PCSP
++	{ "pcsp=", pcsp_setup },
+ #endif
+ #ifdef CONFIG_ISDN_DRV_ICN
+ 	{ "icn=", icn_setup },
+--- linux/drivers/char/vt.c.orig	Mon May 13 06:36:19 1996
++++ linux/drivers/char/vt.c	Thu Aug 29 23:53:14 1996
+@@ -8,6 +8,7 @@
+  *  Restrict VT switching via ioctl() - grif@cs.ucr.edu - Dec 1995
+  */
+ 
++#include <linux/config.h>
+ #include <linux/types.h>
+ #include <linux/errno.h>
+ #include <linux/sched.h>
+@@ -147,9 +148,19 @@
+  * We also return immediately, which is what was implied within the X
+  * comments - KDMKTONE doesn't put the process to sleep.
+  */
++
++#if defined(CONFIG_PCSP) || defined(CONFIG_PCSP_MODULE)
++extern char pcsp_speaker;
++#endif
++
+ static void
+ kd_nosound(unsigned long ignored)
+ {
++#if defined(CONFIG_PCSP) || defined(CONFIG_PCSP_MODULE)
++	/* can't allow usage of counter 2 if /dev/pcsp use it */
++	if (pcsp_speaker)
++		return;
++#endif
+ 	/* disable counter 2 */
+ 	outb(inb_p(0x61)&0xFC, 0x61);
+ 	return;
+@@ -163,6 +174,11 @@
+ 
+ 	unsigned int count = 0;
+ 
++#if defined(CONFIG_PCSP) || defined(CONFIG_PCSP_MODULE)
++	/* can't allow usage of counter 2 if /dev/pcsp use it */
++	if (pcsp_speaker)
++		return;
++#endif
+ 	if (hz > 20 && hz < 32767)
+ 		count = 1193180 / hz;
+ 	
+--- linux/drivers/char/mem.c.orig	Thu Aug 29 23:49:54 1996
++++ linux/drivers/char/mem.c	Thu Aug 29 23:53:14 1996
+@@ -26,6 +26,9 @@
+ #ifdef CONFIG_SOUND
+ void soundcard_init(void);
+ #endif
++#if defined(CONFIG_PCSP) || defined(CONFIG_PCSP_MODULE)
++void pcsp_init(void);
++#endif
+ #ifdef CONFIG_ISDN
+ void isdn_init(void);
+ #endif
+@@ -401,6 +404,9 @@
+ #endif
+ #ifdef CONFIG_SOUND
+ 	soundcard_init();
++#endif
++#if defined(CONFIG_PCSP) || defined(CONFIG_PCSP_MODULE)
++	pcsp_init();
+ #endif
+ #if CONFIG_QIC02_TAPE
+ 	qic02_tape_init();
+--- linux/drivers/Makefile.orig	Mon Apr 22 09:59:39 1996
++++ linux/drivers/Makefile	Thu Aug 29 23:53:14 1996
+@@ -9,7 +9,7 @@
+ 
+ SUB_DIRS     := block char net #streams
+ MOD_SUB_DIRS := $(SUB_DIRS)
+-ALL_SUB_DIRS := $(SUB_DIRS) pci sbus scsi sound cdrom isdn
++ALL_SUB_DIRS := $(SUB_DIRS) pci sbus scsi sound pcsnd cdrom isdn
+ 
+ ifdef CONFIG_PCI
+ SUB_DIRS += pci
+@@ -36,6 +36,13 @@
+   ifeq ($(CONFIG_SOUND),m)
+   MOD_SUB_DIRS += sound
+   endif
++endif
++
++ifdef CONFIG_PCSP
++SUB_DIRS += pcsnd
++ifeq ($(CONFIG_PCSP),m)
++MOD_SUB_DIRS += pcsnd
++endif
+ endif
+ 
+ ifdef CONFIG_CD_NO_IDESCSI
+--- linux/arch/i386/kernel/irq.c.orig	Thu Jun  6 12:44:42 1996
++++ linux/arch/i386/kernel/irq.c	Fri Aug 30 00:25:24 1996
+@@ -557,3 +557,101 @@
+ 	setup_x86_irq(2, &irq2);
+ 	setup_x86_irq(13, &irq13);
+ } 
++
++#if defined(CONFIG_PCSP) || defined(CONFIG_PCSP_MODULE)
++/*
++ * /dev/pcsp implementation, part of linux/arch/i386/kernel/irq.c
++ *
++ * Copyright (C) 1993-1996  Michael Beck 
++ */
++
++static int (*pcsp_IRQ)(void) = NULL;
++static const char *pcsp_irq0_owner = NULL;
++
++/*
++ * This is a mix of a fast and a slow interrupt;
++ * pcsp_IRQ is called like a fast int; if it returns a 0,
++ * the original timer handler is started
++*/
++extern void FAST_timer_irq(void);
++__asm__(
++	"\n"__ALIGN_STR"\n"
++SYMBOL_NAME_STR(FAST_timer_irq)":\n\t"
++	SAVE_MOST
++	ACK_FIRST(0x01,0)
++	"incl "SYMBOL_NAME_STR(intr_count)"\n\t"
++	"call *"SYMBOL_NAME_STR(pcsp_IRQ)"\n\t"
++	"cmpl $0,%eax\n\t"
++	"je 9f\n\t"
++	"cli\n\t"
++	UNBLK_FIRST(0x01)
++	"decl "SYMBOL_NAME_STR(intr_count)"\n\t"
++	RESTORE_MOST
++
++	"\n"__ALIGN_STR"\n"
++	"9:\t"			/* call the original do_IRQ */
++        "popl %ecx\n\t"
++        "popl %edx\n\t"
++        "popl %eax\n\t"
++        "pop %ds\n\t"
++        "pop %es\n\t"
++ 
++	"pushl $-2\n\t"		/* we know this is IRQ0 */
++	SAVE_ALL
++	"movl %esp,%ebx\n\t"
++	"pushl %ebx\n\t"
++	"pushl $0\n\t"
++	"call "SYMBOL_NAME_STR(do_IRQ)"\n\t"
++	"addl $8,%esp\n\t"
++	"cli\n\t"
++	UNBLK_FIRST(0x01)
++	"decl "SYMBOL_NAME_STR(intr_count)"\n\t"
++	"jmp ret_from_sys_call\n"	
++);
++
++/*
++ * Set the function func to be executed as fast-timer-int;
++ * if func returns a 0, the old IRQ0-handler is called
++ * This is only allowed if IRQ0 was a former SLOW-int;
++ * should be no problem because do_timer() use it normally :-)
++ */
++int pcsp_set_irq(int (*func)(void))
++{
++	unsigned long flags;
++	struct irqaction * action = irq_action[0];
++
++	pcsp_IRQ = func;
++	if (! pcsp_IRQ)
++		return -EINVAL;
++	if (! action->name)
++		return -EINVAL;
++	if (action->flags & SA_INTERRUPT)
++		return -EBUSY;
++	pcsp_irq0_owner  = action->name;
++	action->name = "pcsp+timer";
++	save_flags(flags);
++	cli();
++	set_intr_gate(0x20, FAST_timer_irq);
++	restore_flags(flags);
++	return 0;
++}
++
++/*
++ * reset the IRQ0 to default handling (a SLOW-int)
++ */
++int pcsp_release_irq(void)
++{
++	unsigned long flags;
++	struct irqaction * action = irq_action[0];
++
++	if (! pcsp_IRQ)
++		return -EINVAL;
++	save_flags(flags);
++	cli();
++	set_intr_gate(0x20, interrupt[0]);
++	restore_flags(flags);
++	pcsp_IRQ = NULL;
++	action->name = pcsp_irq0_owner;
++	return 0;
++}
++#endif
+--- linux/arch/i386/kernel/time.c.orig	Thu Aug 29 23:49:40 1996
++++ linux/arch/i386/kernel/time.c	Thu Aug 29 23:53:14 1996
+@@ -166,6 +166,10 @@
+ 
+ #define TICK_SIZE tick
+ 
++#if defined(CONFIG_PCSP) || defined(CONFIG_PCSP_MODULE)
++extern int pcsp_clockticks, pcsp_timer0_latch;
++#endif
++
+ static unsigned long do_slow_gettimeoffset(void)
+ {
+ 	int count;
+@@ -182,6 +186,9 @@
+ 	outb_p(0x00, 0x43);	/* latch the count ASAP */
+ 	count = inb_p(0x40);	/* read the latched count */
+ 	count |= inb(0x40) << 8;
++#if defined(CONFIG_PCSP) || defined(CONFIG_PCSP_MODULE)
++	count += pcsp_clockticks - pcsp_timer0_latch;
++#endif
+ 
+  	jiffies_t = jiffies;
+ 
+--- linux/arch/i386/config.in.orig	Mon May 13 06:17:23 1996
++++ linux/arch/i386/config.in	Thu Aug 29 23:53:14 1996
+@@ -101,6 +101,10 @@
+ if [ "$CONFIG_SOUND" != "n" ]; then
+   source drivers/sound/Config.in
+ fi
++tristate 'PC-speaker and DAC driver support' CONFIG_PCSP
++if [ "$CONFIG_PCSP" != "n" ]; then
++  source drivers/pcsnd/config.in
++fi
+ endmenu
+ 
+ mainmenu_option next_comment
+--- linux/Documentation/Configure.help.orig	Thu Aug 29 23:49:33 1996
++++ linux/Documentation/Configure.help	Thu Aug 29 23:53:15 1996
+@@ -3511,12 +3511,69 @@
+   information in various README files in drivers/sound.  If you want
+   to compile this as a module ( = code which can be inserted in and
+   removed from the running kernel whenever you want), say M here and
+-  read Documentation/modules.txt. I'm told that even without a sound
+-  card, you can make your computer say more than an occasional beep,
+-  by programming the PC speaker. Kernel patches and programs to do
+-  that are at
+-  sunsite.unc.edu:/pub/Linux/kernel/patches/console/pcsndrv-X.X.tar.gz,
+-  to be extracted with "tar xzvf filename".
++  read Documentation/modules.txt.
++
++PC speaker support
++CONFIG_PCSP
++  If you don't have a sound card in your computer, you can include a
++  driver for the PC speaker which allows it to act like a primitive
++  sound card. You can compile this as a module, in which case only the
++  timer-interrupt hooks and frequency initialization code will appear
++  in the kernel, and the rest of the driver will be loaded as a module
++  whenever you want.
++
++PC speaker automatic measurement
++CONFIG_PCSP_NO_TEST_SPEED
++  Since version 0.6 the driver automatically tests the speed of your
++  computer and configure the PCSP-driver at kernel-startup. If your
++  machine is too slow (cannot play with more than 12500 Hz) the driver
++  is disabled and you here a beep.
++  However, you can override this if you specify a 'pcsp=SAMPLERATE' at
++  kernel commandline or by disabling the automatic speed detection.
++  THIS IS NOT RECOMMENDED, your machine may HANG if you select a
++  samplerate, which is to high for your machine.
++  If the measurement switch the driver off but the version 0.5 was working
++  on your machine, please contact me.
++  It is safe to answer 'N' here.
++
++PC speaker selected samplerate
++CONFIG_PCSP_SRATE
++  If you have disabled the automatically speed test, select here to
++  real samplerate that is used for PC speaker. The full range from 12000Hz
++  up to 18356 is allowed. Higher rates results in better sound quality
++  but may crash your machine if it is too slow (<486DX-33).
++
++PC speaker 16bit stereo emulation
++CONFIG_PCSP_16BIT
++  Since version 0.8 the driver can emulate 16bit stereo audio data on any
++  output device. It cannot play this data at the high resolution and converts
++  them to 8bit (and mono for mono devices), but allows to run applications
++  that want 16bit samples (DOOM of course, what else :-), but you need at
++  least a 486DX and a DX-2 if you have only the PC-Speaker; it works great
++  on my 486DX-2 with a Stereo-on-1, really better than my SB 1.5 :-).
++  It's save to say 'Y' if you have a Pentium our a faster machine.
++
++PC speaker /dev/mixer emulation
++CONFIG_PCSP_MIXER
++  Starting with version 0.4 the driver can simulate the /dev/mixer device.
++  This is only useful if you have Stereo-on-One or Stereo-DACs,
++  because Mono-devices will ignore the 2 volumes and use only the
++  left volume (PC-Speaker however use the mean value).
++  The /dev/mixer simulation supports only the Master-Volume device.
++  If you don't include /dev/mixer support, you can use pcsel to
++  change only the PC-Speaker volume, DACs will play at 100 %.
++  The mixer emulation is enabled when you have choosen the 16bit
++  emulation.
++  Disabling /dev/mixer support don't speed up anything, so it's save to
++  say 'Y'.
++
++PC speaker default left volume
++CONFIG_PCSP_LEFT
++  The startup volume for the left channel in %.
++
++PC speaker default right volume
++CONFIG_PCSP_RIGHT
++  The startup volume for the right channel in %.
+ 
+ ProAudioSpectrum 16 support
+ CONFIG_PAS
+--- linux/Makefile.orig	Thu Aug 29 23:49:53 1996
++++ linux/Makefile	Thu Aug 29 23:53:15 1996
+@@ -138,6 +138,10 @@
+ DRIVERS := $(DRIVERS) drivers/sound/sound.a
+ endif
+ 
++ifdef CONFIG_PCSP
++DRIVERS := $(DRIVERS) drivers/pcsnd/pcsp.a
++endif
++
+ ifdef CONFIG_PCI
+ DRIVERS := $(DRIVERS) drivers/pci/pci.a
+ endif

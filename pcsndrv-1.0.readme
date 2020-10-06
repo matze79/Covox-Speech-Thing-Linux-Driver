@@ -1,0 +1,364 @@
+Alternate Sound Driver for Linux 2.0 Version 1.0
+================================================
+Copyright (C) 1993-1996  Michael Beck
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+
+
+Introduction
+============
+ 
+The PC-Speaker part of this device-driver is based on auplay-0.2 by
+Rick Miller and the /dev/audio implementation by Dirk Verworner.
+The /dev/pcmixer part is based on the mixer-implementation of the
+'real' sounddriver distributed by Hannu Savolainen. Special thanks
+to Mark J. Cox.
+
+This version supports the following devices :
+
+/dev/pcsp	- the raw data device
+/dev/pcaudio	- the SUN-audio device
+/dev/pcmixer	- the mixer-device
+
+You can 'assign' a output-device to /dev/pcsp. That's why I call it
+now the 'Alternate Sound-driver'. Supported output-devices:
+
+Stereo-on-One	(designed by Mark J. Cox), this is autodetected during
+		kernel startup and selected by default	
+PC-Speaker	is selected if no Stereo-on-One was found 
+Mono DAC 	on one lp-port
+Stereo DAC	on two lp-ports
+
+/dev/pcsp supports /dev/dsp ioctl calls (set speed, stereo, samplesize,
+getblocksize). You can vary the sample speed, the driver converts it
+to its real samplerate and return the right value for the others,
+so you can use the .MOD-player to play AMIGA .MOD files by using the
+-o option (or install a symbolic link).
+For instance if PC-Speaker is your output-device
+
+  str32 -o /dev/pcsp popcorn.mod
+
+will play the file thru PC-Speaker. Because the real speed is now taken
+depending on your cpu-speed, you should set the samplespeed not higher than
+this value (use the pcsel-utility in this package to get this speed).
+DACs support real samplerate from 4000 Hz up to the measured maximal samplerate
+(Someone has a P-150 ?). Please get the str-program from the sound-package
+distributed by Hannu Savolainen, in the snd-driv-?.?.tar.z archive.
+I enclose vplay, a utility to play .VOC, .WAV and raw data files thru /dev/dsp.
+Read the Readme in pcsnd-kit directory for features.
+
+If you have a Stereo-on-One or two DACs
+
+  str32 -o /dev/pcsp -S popcorn.mod
+
+will play the file in Stereo thru the printer-port!
+
+Volume-Control is given thru /dev/pcmixer (which is compatible to /dev/mixer).
+So use the mixer-utilities enclosed in snd-utils-???.
+
+Compiling as Module
+===================
+
+Starting with this version the driver can be compiled 'as a module'.
+However the kernel still needs patches.
+Thanks to Harald Milz who wrote the first 'module-like' version and
+Chris Metcalf who updates the driver to Linux 2.0.
+This version contains a little bit better fragment support that seems to
+be needed for some newer games. This code was send to me by someone I forgot,
+SORRY, MEA CULPA...
+
+NOTE: If you want to use the PCSP-driver with the kerneld, add the following
+      line to your /etc/modules.conf (or /etc/conf.modules) file:
+
+alias char-major-13 pcsnd
+
+
+The Automatical Speed Detection
+===============================
+
+This version automaticly measures the time needed for execution of
+the timer-interupt and calculate the highest real samplerate possible
+at this speed.
+If this samplerate is too slow (<12500), the driver is disabled!
+You get a message and hear an ugly 2-tone beep.
+This is a new feature, so you can override the detection by using
+a kernel-command parameter like 'pcsp=17500', or switch it off
+during kernel-configuration with 'pcsp=off'.
+However, this is NOT RECOMMENDED, because the automatical detection
+configure the driver to use less than 90% cpu-time, so otherwise it
+may crash your computer (I know it's funny to play with the TURBO-key).
+Because this version uses it's own IRQ-delivery, the driver is speeded up
+and hopefully works at least at 386DX-25.
+
+[ Pressing TURBO and disabling both caches on my 486 gives my around 6  ]
+[ Bogomips. This is the speed of a 386DX-33 and the driver works        ]
+[ reasonable at this speed. However, MOD-players aren't satisfied. Sigh.]
+
+The 'Interval Mode' introduced in 0.5 is gone away, it doesn't solve
+the speed-problem on 386 and reduce the quality on 486.
+However, you may reduce the selected samplerate, but can't set it above
+the measured maximum!
+
+Please mail me if speed-detection doesn't work on your machine or
+the driver hangs your machine with automatical speed detection!
+
+The bad news
+============
+
+PCSP is more for fun and may or may not satisfy your expectations of
+a 'SOUND DRIVER'.
+It plays reasonably samples and AMIGA .MOD-files on my machine (if no
+disk access occurs). The quality of playing heavyly depends on your
+PC-Speaker (and maybe on the digital noise produced by your computer
+equipment). The aim was to produce sort of a 'standard audio device',
+don't expect too much. Slow machines seem to produce more noise.
+Stereo-on-One and DAC's don't have problems with mices, but during
+disk access they "slow down" (sigh).
+There is no mutual locking between this driver and other drivers
+using lp?.
+Declaring a printer as a DAC should produce nothing, but I'm not sure
+about all parallel devices. So caryfully configure the usage of your
+lp-ports.
+
+WARNING: This driver does some really bad things (for *nix - systems,
+DOS-programs do that during the initialisation :-). It changes the
+clock rate of the timer and assigns another interrupt handler to the
+timerinterupt which is the heard of multitasking on every system.
+This version shouldn't crash a slow machine because the speed-detection,
+but there is NO WARRANTY!
+Ok, let's follow the good things.
+
+Changes from 0.9b
+=================
+
+- better fragment support
+- patchfiles for 2.0 (hopefully no more mails :-) with full configuration
+  support
+- improved utils
+- started with win3.x VxD (just for fun :-)
+
+Changes from 0.9 and 0.9a
+=========================
+
+- module support
+- some stupid bugs fixed
+- ready for 1.3.x and ELF
+
+Changes from 0.8a
+=================
+
+- new major number 13 to solve the conflict with iBCS2
+- ready for Linux 1.2.x
+
+Changes from 0.7
+================
+
+- added support for the joystick driver, apply the joystick-0.7.diff
+- added 16 bit support (mostly for DOOM :-)
+- added some IOCTL's for more compatibility with VoxWare 3.0
+- increased buffer size for smoother playing
+- some changes for fast 486's, so the STO1 works
+
+Changes from 0.6
+================
+
+- removed the ulaw-bug and added some more ulaw support, /dev/pcaudio
+  is now as fast as /dev/pcsp
+- added a check_region()
+- improved pcspinstall script
+- man pages for the utilities
+
+Changes from 0.5
+================
+
+- automatic speed detection!
+- speeded up by using a special interrupt delivery (the promised
+  "other way"), this include some more patches
+- support for adjtimex(), but not tested
+- can be switched off and configured by commandline (pcsp=off),
+  not very useful but now possible
+- driver is switched off if both buffers are empty, this short extremly
+  the time of a "gap", not perfect but useful, thanks to Alistar MacDonald
+- removed useless 'INTERVAL MODE'
+- utility enhancement; pcsel -v now updates the mixer values if
+  /dev/mixer is installed
+- removed some little bugs and include some panic() calls if something
+  goes wrong with the timer-int, hopefully panic never occurs
+- acts more like /dev/dsp
+
+Changes from 0.4 
+================
+
+- the PC-Speaker samplerate can be changed in 'Fixed Mode' or can be
+  selected in the intervall from ??? - 18356, for higher or lower rates
+  the old oversampling method is used
+- the driver now stop the output if both buffers are empty, this
+  reduces the gaps and speed things up if programs open the driver
+  permanently
+- a small bugfix in the SYNC-ioctl and some warnings removed
+- bugfix for exclude /dev/mixer support
+
+Changes from 0.3
+================
+
+- the (real) samplerate for PC-Speaker is now 18356 Hz; I only eleminated
+  the twofold oversampling which was stupid 
+- Volume-Control for PC-Speaker: Using another way of playing thru
+  PC-Speaker, samples are much louder (like players under DOS), so this
+  feature was usefull (for me)
+- dev/pcmixer support: Only the Master-Volume is supported, nonetheless
+  it works in the expected way for Stereo-devices, Mono-devices use
+  the left volume, PC-Speaker uses the mean of left and right  
+- vplay now has the option -o device, and some bugfixes were done
+- pcsel bugfix, and support for volume control if /dev/pcmixer is disabled
+  (in that case you can only change the volume of PC-Speaker)
+
+Changes from 0.2a
+=================
+
+- Support Mark J. Cox Stereo-on-One DAC which plays Stereo, uses only one
+  lp-port, can be autodetected and produce better quality than my SB 1.0
+  (really if no heavy diskacces :-( 
+- Support simple DACs on one or two lp-ports (this allows Stereo)
+- Support version 2 /dev/dsp ioctl's (use #ifdef SOUND_VERSION to determine
+  the version. This is choosen for compability with version 2 of
+  the sounddriver, look in the vplay code for a (bad) example) or use
+  the new format in the hope it will not be changed in the future
+- the pcsp.h file is now located in <sys/pcsp.h> like soundcard.h
+- Restoring the timer 2 mode to square-wave generator after device release
+  (this is needed for dosemu)
+- interrupt starts after first data was written / stopped after a 
+  SNDCTL_DSP_RESET
+- Some speed enhancement by optimizing the interrupt-routine (after I
+  looked up the assembler-output I think it would be hard to get it
+  significantly better).
+
+It runs better on faster machines :-(. Sorry, but it's a a cyclehog.
+
+
+Installation
+============
+
+Install the archive and read linux/drivers/pcsnd/README!
+To install the utilities, run make in the pcsnd-kit subdirectory.
+
+
+Utilities
+=========
+
+This package should work with most utilities written for Hannu Savolainen's
+sounddriver using /dev/dsp or /dev/audio (tested with Doom, str, mixer, xmix,
+xvmixer, someone wrote me it works with xboing, a game which support
+-sound option). Simply get them!
+If your output-device is the PC-Speaker, you should set the default values
+to mono, 8 bit and up to 18356 Hz for best performance because the driver
+convert any other settings internally to this ones.
+DACs may be set to Stereo and they support real samplerates up to the measured 
+maximum samplerate (or 44100 Hz on a 'really hot' machine).
+
+The pcsel program which allows configuring the /dev/pcsp by setting
+output-device, Stereo, samplespeed, real samplerate, volume and lp-port.
+
+The vplay-program to play CREATIVE LABS Voice files, Microsoft WAVE files
+and raw data files is included. 
+Try:
+    cat enterpri.raw >/dev/null  (load it in the cache for best performance !!!)
+    vplay -s 9321 enterpri.raw
+
+to check the driver (output should be different from white noise :-).
+Read the README in the pcsnd-kit directory.
+
+Using the driver
+================
+
+All programs using this driver should include <sys/pcsp.h>. If you
+don't have the soundcard-driver the file <sys/soundcard.h> is
+created by the pcspinstall script and consists of the line:
+
+#include <sys/pcsp.h>
+
+So include <sys/soundcard.h> if you want write programs which work with
+both drivers (because they use the same ioctl, your program will run
+on "right" soundcards. If you use /dev/dsp and install the symbolic links,
+this method is prefered).
+
+The devices are opened exclusively. When another program tries to open the
+driver returns EBUSY. Not more than one of the devices can be open at the
+same time (except /dev/pcmixer, you can only open one mixer, because I
+could not imagine about using more, write me if you need more mixers).
+Note that if your output-device is PC-Speaker :
+
+1.) While a program have opened /dev/pc*, your console cannot 'beep'
+    (the 'resource' is busy).
+2.) Some programs running with root permissions may stop the output
+    if they reprogram timer 2 (dosemu with speaker = native currently
+    don't and other I don't know [auplay of course] :-).
+
+
+Audio output
+============
+
+The /dev/pcsp can be used in digitized voice applications. This device
+can be accessed with programs like cat or dd. The default speed is
+8000 Hz and can be changed by SNDCTL_DSP_SPEED ioctl() -call.
+For example: 
+
+  samplespeed = 11025;
+  ioctl(fd, SNDCTL_DSP_SPEED, &samplespeed);
+
+sets the sample speed to 11025 Hz
+
+The device driver has 2 buffers for audio output. When a program makes
+a write to the device, all bytes will be copied to a buffer and 
+played in the timer-interrupt. While the first buffer is being played,
+the process may write to the other buffers. If no buffer is free,
+process has to wait.
+
+For optimal performance, you should write full blocks to the device. 
+Writing too short blocks can result in a silence gap. Too long writes will
+cause unnecessary process switches.
+The size of a block can be obtained with a SNDCTL_DSP_GETBLKSIZE.
+For example: 
+  ioctl(fd, SNDCTL_DSP_GETBLKSIZE, &blksize).
+
+(if you have the "real" /dev/dsp, it's the same procedure, write me
+if you find incompatibilities)
+
+
+The HARDWARE
+============
+
+Please read Mark J. Cox' file HARDWARE.DOC which is included with his kindly
+permissions if you want to know how simple you can built DACs and the famous
+Stereo-on-One device! (Oh, it's a DOS-file for those who have problems
+looking at it with vi, simply try vim :-)
+
+
+Where to get a newer version
+============================
+
+If this driver isn't part of the standard kernel (and it seems it would
+never be :-) look at
+
+  ftp.informatik.hu-berlin.de	/pub/os/linux/hu-sound/pcsnd*
+
+for the latest version. BTW we have a LOT of Linux stuff!
+
+If you have any ideas, please contact me.
+
+
+Contact address
+
+Michael Beck 				beck@dgroup.de
